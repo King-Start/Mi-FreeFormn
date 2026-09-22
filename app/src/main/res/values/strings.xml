@@ -158,4 +158,6 @@
     <string name="recent_label">Running Freeform</string>
     <string name="floating_alpha_title">Sidebar Transparency</string>
     <string name="recent_open_by_freeform">Open by Mi-Freeform</string>
+    <string name="show_top_bar_title">Show top bar</string>
+    <string name="show_top_bar_summary">Hold and drag to move the window. Tap left to go back, tap right to close</string>
 </resources>

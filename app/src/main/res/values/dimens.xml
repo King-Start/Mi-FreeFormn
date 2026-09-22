@@ -2,7 +2,7 @@
     <dimen name="fab_margin">16dp</dimen>
 
     <dimen name="scale_view_size">32dp</dimen>
-    <dimen name="top_bar_height">0dp</dimen>
+    <dimen name="top_bar_height">20dp</dimen>
     <dimen name="bottom_bar_height">24dp</dimen>
     <dimen name="bottom_bar_height_flyme">36dp</dimen>
     <dimen name="card_corner_radius">16dp</dimen>
