@@ -381,6 +381,9 @@ class FreeformView(
                 "snap_to_edge" -> {
                     // Snap to edge diatur saat move selesai
                 }
+                "show_top_bar" -> {
+                    applyTopBarVisibility()
+                }
                 else -> {
                     initConfig()
                 }
@@ -496,6 +499,13 @@ class FreeformView(
         binding.bottomBar.middleView.setOnTouchListener(this@FreeformView)
         binding.bottomBar.sideView.setOnTouchListener(this@FreeformView)
 
+        val topBarTouchListener = TopBarTouchListener()
+        binding.topBar.root.setOnTouchListener(topBarTouchListener)
+        binding.topBar.leftView.setOnTouchListener(topBarTouchListener)
+        binding.topBar.middleView.setOnTouchListener(topBarTouchListener)
+        binding.topBar.rightView.setOnTouchListener(topBarTouchListener)
+        applyTopBarVisibility()
+
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             binding.textureView.setOnTouchListener(touchListener)
         } else {
@@ -530,6 +540,62 @@ class FreeformView(
 
         binding.freeformRoot.alpha = 1f
         binding.textureView.alpha = 0f
+    }
+
+    private fun applyTopBarVisibility() {
+        if (!::binding.isInitialized) return
+        val show = viewModel.getBooleanSp("show_top_bar", true)
+        binding.topBar.root.visibility = if (show) View.VISIBLE else View.GONE
+    }
+
+    private inner class TopBarTouchListener : View.OnTouchListener {
+        private var moveStartX = 0f
+        private var moveStartY = 0f
+        private var isMoved = false
+        private val touchSlop = ViewConfiguration.get(context).scaledTouchSlop
+
+        @SuppressLint("ClickableViewAccessibility")
+        override fun onTouch(v: View, event: MotionEvent): Boolean {
+            when (event.actionMasked) {
+                MotionEvent.ACTION_DOWN -> {
+                    moveStartX = event.rawX
+                    moveStartY = event.rawY
+                    isMoved = false
+                }
+                MotionEvent.ACTION_MOVE -> {
+                    val dx = event.rawX - moveStartX
+                    val dy = event.rawY - moveStartY
+                    if (!isMoved && (kotlin.math.abs(dx) > touchSlop || kotlin.math.abs(dy) > touchSlop)) {
+                        isMoved = true
+                    }
+                    if (isMoved && !isWindowLocked && !isDestroy) {
+                        runCatching {
+                            windowManager.updateViewLayout(binding.root, windowLayoutParams.apply {
+                                x += dx.toInt()
+                                y += dy.toInt()
+                            })
+                        }
+                        moveStartX = event.rawX
+                        moveStartY = event.rawY
+                    }
+                }
+                MotionEvent.ACTION_UP -> {
+                    if (isMoved) {
+                        if (viewModel.getBooleanSp("snap_to_edge", true)) {
+                            snapToEdge()
+                        }
+                    } else {
+                        when (v.id) {
+                            R.id.leftView -> performBackKey()
+                            R.id.rightView -> destroyWithAnim()
+                        }
+                    }
+                    isMoved = false
+                }
+                MotionEvent.ACTION_CANCEL -> isMoved = false
+            }
+            return true
+        }
     }
 
     private fun performBackKey() {
@@ -742,8 +808,7 @@ class FreeformView(
             height = WindowManager.LayoutParams.MATCH_PARENT
             flags = windowLayoutParams.flags or
                     WindowManager.LayoutParams.FLAG_DIM_BEHIND or
-                    WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH xor
-                    WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
+                    WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH
         }
 
         runCatching {
@@ -2509,6 +2574,42 @@ class FreeformView(
                             Intent(context, FreeformService::class.java)
                                 .setAction(FreeformService.ACTION_CALL_INTENT)
                                 .putExtra(Intent.EXTRA_INTENT, config.intent)
+                                .putExtra(FreeformService.EXTRA_DISPLAY_ID, virtualDisplay.display.displayId)
+                        )
+                    }
+                }
+            }
+        }
+        override fun onTaskRequestedOrientationChanged(tId: Int, requestedOrientation: Int) {
+            var tempRotation = requestedOrientation
+            if (tempRotation != VIRTUAL_DISPLAY_ROTATION_PORTRAIT && tempRotation != VIRTUAL_DISPLAY_ROTATION_LANDSCAPE) tempRotation = VIRTUAL_DISPLAY_ROTATION_PORTRAIT
+            if (taskList.contains(tId) && tempRotation != virtualDisplayRotation) {
+                virtualDisplayRotation = tempRotation
+                scope.launch(Dispatchers.Main) { onFreeFormRotationChanged() }
+            }
+        }
+        override fun onActivityRequestedOrientationChanged(tId: Int, requestedOrientation: Int) {
+            var tempRotation = requestedOrientation
+            if (tempRotation != VIRTUAL_DISPLAY_ROTATION_PORTRAIT && tempRotation != VIRTUAL_DISPLAY_ROTATION_LANDSCAPE) tempRotation = VIRTUAL_DISPLAY_ROTATION_PORTRAIT
+            if (taskList.contains(tId) && tempRotation != virtualDisplayRotation) {
+                virtualDisplayRotation = tempRotation
+                scope.launch(Dispatchers.Main) { onFreeFormRotationChanged() }
+            }
+        }
+    }
+
+    companion object {
+        private const val TAG = "FreeformView"
+        const val REMEMBER_X = "freeform_remember_x"
+        const val REMEMBER_Y = "freeform_remember_y"
+        const val REMEMBER_LAND_X = "freeform_remember_land_x"
+        const val REMEMBER_LAND_Y = "freeform_remember_land_y"
+        const val REMEMBER_HEIGHT = "freeform_remember_height"
+        const val REMEMBER_LAND_HEIGHT = "freeform_remember_land_height"
+        private const val VIRTUAL_DISPLAY_ROTATION_PORTRAIT = 1
+        private const val VIRTUAL_DISPLAY_ROTATION_LANDSCAPE = 0
+    }
+}onfig.intent)
                                 .putExtra(FreeformService.EXTRA_DISPLAY_ID, virtualDisplay.display.displayId)
                         )
                     }

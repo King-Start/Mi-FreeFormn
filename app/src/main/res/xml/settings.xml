@@ -203,6 +203,13 @@
             android:max="50"
             app:showSeekBarValue="true"/>
 
+        <SwitchPreference
+            android:key="show_top_bar"
+            android:title="@string/show_top_bar_title"
+            android:summary="@string/show_top_bar_summary"
+            app:defaultValue="true"
+            app:iconSpaceReserved="false"/>
+
     </PreferenceCategory>
 
     <PreferenceCategory

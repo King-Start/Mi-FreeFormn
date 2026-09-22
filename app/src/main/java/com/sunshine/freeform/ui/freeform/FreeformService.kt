@@ -142,12 +142,21 @@ class FreeformService : Service(), ScreenListener.ScreenStateListener {
                 val parcelable: Parcelable? = intent.getParcelableExtra(Intent.EXTRA_INTENT)
                 val displayId = intent.getIntExtra(EXTRA_DISPLAY_ID, activeView.displayId)
                 val options = ActivityOptions.makeBasic().setLaunchDisplayId(displayId)
+                val userId = activeView.config.userId
                 if (parcelable is Intent) {
                     parcelable.flags = parcelable.flags or Intent.FLAG_ACTIVITY_NO_ANIMATION
                     activityManager.startActivityAsUserWithFeature(
                         null, SHELL, null, parcelable,
                         parcelable.type, null, null, 0, 0,
-                        null, options.toBundle(), 0
+                        null, options.toBundle(), userId
+                    )
+                } else if (parcelable is PendingIntent) {
+                    val pendingIntentHidden = Refine.unsafeCast<PendingIntentHidden>(parcelable)
+                    val activityOptionsHidden = Refine.unsafeCast<ActivityOptionsHidden>(options)
+                        .setCallerDisplayId(displayId)
+                    activityManager.sendIntentSender(
+                        pendingIntentHidden.target, pendingIntentHidden.whitelistToken, 0, null,
+                        null, null, null, activityOptionsHidden.toBundle()
                     )
                 }
             }
