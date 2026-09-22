@@ -610,9 +610,9 @@ class FreeformView(
         if (!isHidden) {
             windowLayoutParams.flags =
                 WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS or
-                        WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
-            WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED or
-                    WindowManager.LayoutParams.FLAG_ALT_FOCUSABLE_IM
+                        WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE or
+                        WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED or
+                        WindowManager.LayoutParams.FLAG_ALT_FOCUSABLE_IM
             windowManager.updateViewLayout(binding.root, windowLayoutParams)
         }
     }
@@ -1650,26 +1650,36 @@ class FreeformView(
 
     // Phone call receiver untuk auto minimize
     private var phoneCallReceiver: android.content.BroadcastReceiver? = null
+    // Untuk Android 12+
+    private var telephonyCallback: android.telephony.TelephonyCallback? = null
 
     private fun registerPhoneCallReceiver() {
+        unregisterPhoneCallReceiver() // Cleanup dulu
+
+        // q-fix: broadcast maupun callback sama-sama butuh READ_PHONE_STATE.
+        // Tanpa permission ini fitur auto minimize on call tidak akan pernah berfungsi.
+        if (androidx.core.content.ContextCompat.checkSelfPermission(
+                context, android.Manifest.permission.READ_PHONE_STATE
+            ) != android.content.pm.PackageManager.PERMISSION_GRANTED
+        ) {
+            return
+        }
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            // Android 12+ - pakai TelephonyCallback
+            registerPhoneStateCallback()
+        } else {
+            // Android < 12 - pakai BroadcastReceiver
+            registerPhoneStateReceiver()
+        }
+    }
+
+    // Untuk Android < 12
+    private fun registerPhoneStateReceiver() {
         phoneCallReceiver = object : android.content.BroadcastReceiver() {
             override fun onReceive(ctx: android.content.Context, intent: Intent) {
                 val state = intent.getStringExtra(android.telephony.TelephonyManager.EXTRA_STATE)
-                if (state == android.telephony.TelephonyManager.EXTRA_STATE_RINGING ||
-                    state == android.telephony.TelephonyManager.EXTRA_STATE_OFFHOOK) {
-                    scope.launch(Dispatchers.Main) {
-                        if (!isFloating && !isDestroy) floatViewToMiniView()
-                    }
-                } else if (state == android.telephony.TelephonyManager.EXTRA_STATE_IDLE) {
-                    // Telepon selesai → restore floating window
-                    scope.launch(Dispatchers.Main) {
-                        if (isFloating && !isDestroy) {
-                            android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
-                                if (isFloating && !isDestroy) moveToFirst()
-                            }, 1000)
-                        }
-                    }
-                }
+                handlePhoneState(state)
             }
         }
         val filter = android.content.IntentFilter().apply {
@@ -1679,9 +1689,71 @@ class FreeformView(
         runCatching { context.registerReceiver(phoneCallReceiver, filter) }
     }
 
+    // Untuk Android 12+
+    @RequiresApi(Build.VERSION_CODES.S)
+    private fun registerPhoneStateCallback() {
+        val telephonyManager = context.getSystemService(Context.TELEPHONY_SERVICE) as android.telephony.TelephonyManager
+        val callback = object : android.telephony.TelephonyCallback(),
+            android.telephony.TelephonyCallback.CallStateListener {
+            override fun onCallStateChanged(state: Int) {
+                val stateStr = when (state) {
+                    android.telephony.TelephonyManager.CALL_STATE_RINGING ->
+                        android.telephony.TelephonyManager.EXTRA_STATE_RINGING
+                    android.telephony.TelephonyManager.CALL_STATE_OFFHOOK ->
+                        android.telephony.TelephonyManager.EXTRA_STATE_OFFHOOK
+                    android.telephony.TelephonyManager.CALL_STATE_IDLE ->
+                        android.telephony.TelephonyManager.EXTRA_STATE_IDLE
+                    else -> null
+                }
+                stateStr?.let { handlePhoneState(it) }
+            }
+        }
+        telephonyCallback = callback
+        runCatching {
+            telephonyManager.registerTelephonyCallback(
+                context.mainExecutor,
+                callback
+            )
+        }
+    }
+
+    // Handler yang sama untuk keduanya
+    private fun handlePhoneState(state: String?) {
+        when (state) {
+            android.telephony.TelephonyManager.EXTRA_STATE_RINGING,
+            android.telephony.TelephonyManager.EXTRA_STATE_OFFHOOK -> {
+                scope.launch(Dispatchers.Main) {
+                    if (!isFloating && !isDestroy) floatViewToMiniView()
+                }
+            }
+            android.telephony.TelephonyManager.EXTRA_STATE_IDLE -> {
+                // Telepon selesai → restore floating window
+                scope.launch(Dispatchers.Main) {
+                    if (isFloating && !isDestroy) {
+                        android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+                            if (isFloating && !isDestroy) moveToFirst()
+                        }, 1000)
+                    }
+                }
+            }
+        }
+    }
+
     private fun unregisterPhoneCallReceiver() {
+        // Unregister BroadcastReceiver (Android < 12)
         runCatching { phoneCallReceiver?.let { context.unregisterReceiver(it) } }
         phoneCallReceiver = null
+
+        // Unregister TelephonyCallback (Android 12+)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            runCatching {
+                telephonyCallback?.let {
+                    val telephonyManager = context.getSystemService(Context.TELEPHONY_SERVICE) as android.telephony.TelephonyManager
+                    telephonyManager.unregisterTelephonyCallback(it)
+                }
+            }
+            telephonyCallback = null
+        }
     }
 
     // Remember size per orientasi
@@ -1787,6 +1859,9 @@ class FreeformView(
     }
 
     override fun destroy() {
+        //q-fix: destroy bisa dipanggil berkali-kali (screen off + tap luar + service onDestroy)
+        if (isDestroy) return
+
         if (viewModel.getBooleanSp("remember_freeform_position", false)) {
             val sp = context.getSharedPreferences(MiFreeform.APP_SETTINGS_NAME, Context.MODE_PRIVATE)
             if (screenRotation == Surface.ROTATION_90 || screenRotation == Surface.ROTATION_270) {
@@ -1833,6 +1908,9 @@ class FreeformView(
             virtualDisplay.surface.release()
             virtualDisplay.surface = null
         }
+
+        //q-fix: VirtualDisplay harus dilepas agar tidak bocor di SystemServer
+        runCatching { virtualDisplay.release() }
 
         runCatching { iWindowManager.removeRotationWatcher(iRotationWatcher) }
 

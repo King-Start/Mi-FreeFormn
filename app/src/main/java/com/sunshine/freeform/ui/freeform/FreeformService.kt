@@ -103,6 +103,16 @@ class FreeformService : Service(), ScreenListener.ScreenStateListener {
                         parcelable.type, null, null, 0, 0,
                         null, options.toBundle(), config.userId
                     )
+                } else if (parcelable is PendingIntent) {
+                    //q-fix: PendingIntent (notifikasi) harus diprioritaskan & hanya dikirim sekali.
+                    //Sebelumnya ada di dalam branch componentName sehingga dua activity ikut terbuka.
+                    val pendingIntentHidden = Refine.unsafeCast<PendingIntentHidden>(parcelable)
+                    val activityOptionsHidden = Refine.unsafeCast<ActivityOptionsHidden>(options)
+                        .setCallerDisplayId(virtualDisplay.display.displayId)
+                    result = activityManager.sendIntentSender(
+                        pendingIntentHidden.target, pendingIntentHidden.whitelistToken, 0, null,
+                        null, null, null, activityOptionsHidden.toBundle()
+                    )
                 } else if (componentName != null) {
                     val launchIntent = Intent(Intent.ACTION_MAIN).apply {
                         component = componentName
@@ -115,15 +125,6 @@ class FreeformService : Service(), ScreenListener.ScreenStateListener {
                         launchIntent.type, null, null, 0, 0,
                         null, options.toBundle(), config.userId
                     )
-                    if (parcelable is PendingIntent) {
-                        val pendingIntentHidden = Refine.unsafeCast<PendingIntentHidden>(parcelable)
-                        val activityOptionsHidden = Refine.unsafeCast<ActivityOptionsHidden>(options)
-                            .setCallerDisplayId(virtualDisplay.display.displayId)
-                        result = activityManager.sendIntentSender(
-                            pendingIntentHidden.target, pendingIntentHidden.whitelistToken, 0, null,
-                            null, null, null, activityOptionsHidden.toBundle()
-                        )
-                    }
                 }
 
                 if (result < 0) {

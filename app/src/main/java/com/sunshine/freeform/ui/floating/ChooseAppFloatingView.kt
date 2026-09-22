@@ -83,7 +83,8 @@ class ChooseAppFloatingView(
 
     fun showFloatingView() {
         scope.launch(Dispatchers.IO) {
-            allFreeFormApps = chooseAppFloatingViewModel.getAllFreeFormApps().first() as ArrayList<FreeFormAppsEntity>?
+            //q-fix: jangan cast langsung List Room ke ArrayList, salin supaya aman
+            allFreeFormApps = ArrayList(chooseAppFloatingViewModel.getAllFreeFormApps().first() ?: emptyList())
             withContext(Dispatchers.Main) {
                 floatingView = LayoutInflater.from(context).inflate(R.layout.view_choose_app_floating, null, false)
                 floatingViewLayoutParams.apply {

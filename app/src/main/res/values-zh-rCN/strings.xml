@@ -146,6 +146,7 @@
     <!--SettingFragment-->
     <string name="require_accessibility">请授权无障碍权限</string>
     <string name="require_notification">请授权通知使用权限</string>
+    <string name="require_phone_state">请授权读取电话状态权限以启用来电自动最小化</string>
     <string name="reset_success">重置成功，部分设置重启米窗后生效</string>
     <string name="require_start_accessibility">请开启无障碍服务后再试</string>
     <string name="require_stop_accessibility">请关闭无障碍服务后再试</string>

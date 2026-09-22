@@ -92,7 +92,8 @@ class NotificationService : NotificationListenerService(),
 
     private fun getNotificationApps() {
         scope.launch(Dispatchers.IO) {
-            notificationApps = (viewModel.getAllNotificationApps().first() as ArrayList<NotificationAppsEntity>?)!!
+            //q-fix: pakai ArrayList(...) alih-alih cast + !! yang bisa NPE/ClassCastException
+            notificationApps = ArrayList(viewModel.getAllNotificationApps().first() ?: emptyList())
 
             notificationAppsPackageName.clear()
             notificationApps.forEach {
@@ -123,7 +124,10 @@ class NotificationService : NotificationListenerService(),
         )
         notificationManager.createNotificationChannel(channel)
 
-        val contentIntent: PendingIntent = if (sbn.notification.contentIntent != null) sbn.notification.contentIntent else sbn.notification.fullScreenIntent
+        //q-fix: contentIntent & fullScreenIntent bisa sama-sama null, akses langsung menyebabkan NPE
+        val contentIntent: PendingIntent? =
+            if (sbn.notification.contentIntent != null) sbn.notification.contentIntent
+            else sbn.notification.fullScreenIntent
         val intent = Intent(this, NotificationIntentService::class.java)
         intent.putExtra("packageName", sbn.packageName)
         intent.putExtra("userId", UserHandle.getUserId(sbn.user))
@@ -143,7 +147,7 @@ class NotificationService : NotificationListenerService(),
             .setAutoCancel(true)
             .setContentIntent(sbn.notification.contentIntent)
         if (largeIcon != null) notificationBuilder.setLargeIcon(largeIcon)
-        if (contentIntent.isActivity) {
+        if (contentIntent?.isActivity == true) {
             notificationBuilder.addAction(freeFormButton)
         }
         val notification = notificationBuilder.build()
