@@ -89,6 +89,7 @@
     <string name="open_by_freeform">Open By Freeform</string>
     <string name="require_accessibility">Please grant accessibility permission</string>
     <string name="require_notification">Please authorize notification usage rights</string>
+    <string name="require_phone_state">Please grant phone state permission to enable auto minimize on call</string>
     <string name="choose_freeform_app">Choose a freeform app</string>
     <string name="hello">Hello</string>
     <string name="welcome">Welcome to Use Mi-Freeform</string>

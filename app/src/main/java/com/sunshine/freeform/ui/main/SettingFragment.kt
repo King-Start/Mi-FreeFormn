@@ -1,14 +1,17 @@
 package com.sunshine.freeform.ui.main
 
+import android.Manifest
 import android.content.Context
 import android.content.Intent
 import android.content.SharedPreferences
+import android.content.pm.PackageManager
 import android.os.Bundle
 import android.provider.Settings
 import android.widget.Toast
 import androidx.activity.result.ActivityResultLauncher
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.widget.AppCompatEditText
+import androidx.core.content.ContextCompat
 import androidx.preference.Preference
 import androidx.preference.PreferenceFragmentCompat
 import androidx.preference.SeekBarPreference
@@ -33,6 +36,7 @@ class SettingFragment : PreferenceFragmentCompat(), Preference.OnPreferenceClick
 
     private lateinit var sp: SharedPreferences
     private lateinit var accessibilityRFAR: ActivityResultLauncher<Intent>
+    private lateinit var phoneStateRFAR: ActivityResultLauncher<String>
 
     override fun onCreatePreferences(savedInstanceState: Bundle?, rootKey: String?) {
         preferenceManager.sharedPreferencesName = MiFreeform.APP_SETTINGS_NAME
@@ -49,12 +53,21 @@ class SettingFragment : PreferenceFragmentCompat(), Preference.OnPreferenceClick
                 requireContext().startForegroundService(Intent(requireContext(), ForegroundService::class.java))
             }
         }
+        //q-fix: auto_minimize_on_call butuh READ_PHONE_STATE, jika diizinkan baru nyalakan switch
+        phoneStateRFAR = registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+            if (granted) {
+                findPreference<SwitchPreference>(AUTO_MINIMIZE_ON_CALL)?.isChecked = true
+            } else {
+                Toast.makeText(requireContext(), getString(R.string.require_phone_state), Toast.LENGTH_SHORT).show()
+            }
+        }
 
         findPreference<Preference>(QUICK_FLOATING_APP)!!.onPreferenceClickListener = this
         findPreference<Preference>(NOTIFICATION_FREEFORM_APPS)!!.onPreferenceClickListener = this
         findPreference<Preference>(RESET_OVERLAY_SETTING)!!.onPreferenceClickListener = this
         findPreference<SwitchPreference>(SHOW_FLOATING)!!.onPreferenceChangeListener = this
         findPreference<SwitchPreference>(NOTIFY_FREEFORM)!!.onPreferenceChangeListener = this
+        findPreference<SwitchPreference>(AUTO_MINIMIZE_ON_CALL)!!.onPreferenceChangeListener = this
         findPreference<IntegerSimpleMenuPreference>(SERVICE_TYPE)!!.onPreferenceChangeListener = this
         findPreference<SeekBarPreference>(FREEFORM_SCALE)!!.apply {
             onPreferenceClickListener = this@SettingFragment
@@ -140,6 +153,14 @@ class SettingFragment : PreferenceFragmentCompat(), Preference.OnPreferenceClick
                     return false
                 }
             }
+            AUTO_MINIMIZE_ON_CALL -> {
+                if (newValue as Boolean &&
+                    ContextCompat.checkSelfPermission(requireContext(), Manifest.permission.READ_PHONE_STATE) != PackageManager.PERMISSION_GRANTED
+                ) {
+                    phoneStateRFAR.launch(Manifest.permission.READ_PHONE_STATE)
+                    return false
+                }
+            }
             SERVICE_TYPE -> {
                 when(newValue as Int) {
                     KeepAliveService.SERVICE_TYPE -> {
@@ -179,6 +200,7 @@ class SettingFragment : PreferenceFragmentCompat(), Preference.OnPreferenceClick
         private const val NOTIFICATION_FREEFORM_APPS = "notification_freeform_apps"
         private const val SHOW_FLOATING = "show_floating"
         private const val NOTIFY_FREEFORM = "notify_freeform"
+        private const val AUTO_MINIMIZE_ON_CALL = "auto_minimize_on_call"
         private const val RESET_OVERLAY_SETTING = "reset_overlay_setting"
         private const val SERVICE_TYPE = "service_type"
         private const val FREEFORM_SCALE = "freeform_scale"

@@ -78,6 +78,8 @@ class ForegroundService : Service(), SharedPreferences.OnSharedPreferenceChangeL
     private lateinit var displayManager: DisplayManager
 
     private var startFreeformReceiver = StartFreeformReceiver()
+    //标记Receiver是否已注册，避免onDestroy中注销未注册的Receiver导致崩溃
+    private var receiverRegistered = false
 
     //获取默认屏幕
     private lateinit var defaultDisplay: Display
@@ -115,6 +117,7 @@ class ForegroundService : Service(), SharedPreferences.OnSharedPreferenceChangeL
         sp.registerOnSharedPreferenceChangeListener(this)
         if (sp.getInt("service_type", KeepAliveService.SERVICE_TYPE) == SERVICE_TYPE) {
             registerReceiver(startFreeformReceiver, IntentFilter("com.sunshine.freeform.start_freeform"))
+            receiverRegistered = true
 
             //q221208.1 修复屏幕旋转后侧边栏不贴边的问题
             iWindowManager = IWindowManager.Stub.asInterface(
@@ -208,13 +211,24 @@ class ForegroundService : Service(), SharedPreferences.OnSharedPreferenceChangeL
 
     override fun onDestroy() {
         super.onDestroy()
-        displayManager.unregisterDisplayListener(displayListener)
+        //q-fix: 当service_type不匹配时onCreate会走else分支直接stopSelf，
+        //此时下面的lateinit属性并未初始化、Receiver也未注册，直接调用会崩溃
+        if (::displayManager.isInitialized) {
+            displayManager.unregisterDisplayListener(displayListener)
+        }
         if (isShowingFloating) removeFloating()
-        sp.unregisterOnSharedPreferenceChangeListener(this)
+        if (::sp.isInitialized) {
+            sp.unregisterOnSharedPreferenceChangeListener(this)
+        }
 
-        unregisterReceiver(startFreeformReceiver)
+        if (receiverRegistered) {
+            runCatching { unregisterReceiver(startFreeformReceiver) }
+            receiverRegistered = false
+        }
 
-        iWindowManager.removeRotationWatcher(rotationWatcher)
+        if (::iWindowManager.isInitialized && ::rotationWatcher.isInitialized) {
+            runCatching { iWindowManager.removeRotationWatcher(rotationWatcher) }
+        }
         stopService(Intent(this, FreeformService::class.java))
     }
 

@@ -124,7 +124,13 @@ class MiFreeform : Application() {
     }
 
     fun execShell(command: String, useRoot: Boolean): Boolean {
-        return controlService?.execShell(command, useRoot)!!
+        //q-fix: controlService bisa null saat Shizuku belum terhubung, jangan pakai !!
+        return try {
+            controlService?.execShell(command, useRoot) ?: false
+        } catch (e: Exception) {
+            addLog(TAG, "execShell", e)
+            false
+        }
     }
 
     fun initShizuku(callback: ShizukuBindCallback) {
