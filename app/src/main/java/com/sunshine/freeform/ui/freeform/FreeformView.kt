@@ -2609,40 +2609,4 @@ class FreeformView(
         private const val VIRTUAL_DISPLAY_ROTATION_PORTRAIT = 1
         private const val VIRTUAL_DISPLAY_ROTATION_LANDSCAPE = 0
     }
-}onfig.intent)
-                                .putExtra(FreeformService.EXTRA_DISPLAY_ID, virtualDisplay.display.displayId)
-                        )
-                    }
-                }
-            }
-        }
-        override fun onTaskRequestedOrientationChanged(tId: Int, requestedOrientation: Int) {
-            var tempRotation = requestedOrientation
-            if (tempRotation != VIRTUAL_DISPLAY_ROTATION_PORTRAIT && tempRotation != VIRTUAL_DISPLAY_ROTATION_LANDSCAPE) tempRotation = VIRTUAL_DISPLAY_ROTATION_PORTRAIT
-            if (taskList.contains(tId) && tempRotation != virtualDisplayRotation) {
-                virtualDisplayRotation = tempRotation
-                scope.launch(Dispatchers.Main) { onFreeFormRotationChanged() }
-            }
-        }
-        override fun onActivityRequestedOrientationChanged(tId: Int, requestedOrientation: Int) {
-            var tempRotation = requestedOrientation
-            if (tempRotation != VIRTUAL_DISPLAY_ROTATION_PORTRAIT && tempRotation != VIRTUAL_DISPLAY_ROTATION_LANDSCAPE) tempRotation = VIRTUAL_DISPLAY_ROTATION_PORTRAIT
-            if (taskList.contains(tId) && tempRotation != virtualDisplayRotation) {
-                virtualDisplayRotation = tempRotation
-                scope.launch(Dispatchers.Main) { onFreeFormRotationChanged() }
-            }
-        }
-    }
-
-    companion object {
-        private const val TAG = "FreeformView"
-        const val REMEMBER_X = "freeform_remember_x"
-        const val REMEMBER_Y = "freeform_remember_y"
-        const val REMEMBER_LAND_X = "freeform_remember_land_x"
-        const val REMEMBER_LAND_Y = "freeform_remember_land_y"
-        const val REMEMBER_HEIGHT = "freeform_remember_height"
-        const val REMEMBER_LAND_HEIGHT = "freeform_remember_land_height"
-        private const val VIRTUAL_DISPLAY_ROTATION_PORTRAIT = 1
-        private const val VIRTUAL_DISPLAY_ROTATION_LANDSCAPE = 0
-    }
 }
