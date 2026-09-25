@@ -83,6 +83,7 @@ class KeepAliveService : AccessibilityService(), SharedPreferences.OnSharedPrefe
     private lateinit var defaultDisplay: Display
 
     private var startFreeformReceiver = StartFreeformReceiver()
+    private var receiverRegistered = false
 
     //屏幕监听
     private val displayListener = object : DisplayManager.DisplayListener {
@@ -102,6 +103,14 @@ class KeepAliveService : AccessibilityService(), SharedPreferences.OnSharedPrefe
 
     override fun onServiceConnected() {
         super.onServiceConnected()
+        // Crash di AccessibilityService = sistem Android otomatis mematikan layanan.
+        // Semua init harus tahan gagal (Shizuku mati, Android 13 receiver flag, dll).
+        runCatching { initKeepAlive() }.onFailure {
+            Log.e(TAG, "onServiceConnected failed, keep service alive", it)
+        }
+    }
+
+    private fun initKeepAlive() {
         sp = getSharedPreferences(MiFreeform.APP_SETTINGS_NAME, Context.MODE_PRIVATE)
         sp.registerOnSharedPreferenceChangeListener(this)
 
@@ -109,47 +118,10 @@ class KeepAliveService : AccessibilityService(), SharedPreferences.OnSharedPrefe
         if (sp.getInt("service_type", SERVICE_TYPE) != SERVICE_TYPE) {
             sp.edit().putInt("service_type", SERVICE_TYPE).apply()
         }
-        stopService(Intent(this, ForegroundService::class.java))
+        runCatching { stopService(Intent(this, ForegroundService::class.java)) }
 
-        registerReceiver(startFreeformReceiver, IntentFilter("com.sunshine.freeform.start_freeform"))
-
-        iWindowManager = IWindowManager.Stub.asInterface(
-            ShizukuBinderWrapper(
-                SystemServiceHelper.getSystemService("window"))
-        )
-        rotationWatcher = object : IRotationWatcher.Stub() {
-            override fun onRotationChanged(rotation: Int) {
-                scope.launch(Dispatchers.Main) {
-                    displayRotation = rotation
-
-                    //q220902.3 如果程序崩溃的话，那么resources.configuration.orientation获取到的方向是错误的，所以不应该用该方法
-                    val tempScreenRotation = if (displayRotation == Surface.ROTATION_0 || displayRotation == Surface.ROTATION_180) {
-                        Configuration.ORIENTATION_PORTRAIT
-                    } else {
-                        Configuration.ORIENTATION_LANDSCAPE
-                    }
-
-                    if (tempScreenRotation != screenRotation) {
-                        screenRotation = tempScreenRotation
-
-                        if (screenRotation == Configuration.ORIENTATION_PORTRAIT) {
-                            screenHeight = max(resources.displayMetrics.widthPixels, resources.displayMetrics.heightPixels)
-                            screenWidth = min(resources.displayMetrics.widthPixels, resources.displayMetrics.heightPixels)
-                        } else {
-                            screenWidth = max(resources.displayMetrics.widthPixels, resources.displayMetrics.heightPixels)
-                            screenHeight = min(resources.displayMetrics.widthPixels, resources.displayMetrics.heightPixels)
-                        }
-
-                        removeFloating()
-                        initConfig()
-                        try {
-                            chooseAppFloatingView.onScreenRotationChanged(screenRotation)
-                        } catch (e: Exception) {}
-                    }
-                }
-            }
-        }
-        iWindowManager.watchRotation(rotationWatcher, Display.DEFAULT_DISPLAY)
+        registerStartFreeformReceiver()
+        initRotationWatcher()
 
         displayManager = getSystemService(Context.DISPLAY_SERVICE) as DisplayManager
         displayManager.registerDisplayListener(displayListener, null)
@@ -166,7 +138,62 @@ class KeepAliveService : AccessibilityService(), SharedPreferences.OnSharedPrefe
 
         initConfig()
         chooseAppFloatingView = ChooseAppFloatingView(this, config.positionX, this)
-        startService(Intent(this, FreeformService::class.java))
+        runCatching { startService(Intent(this, FreeformService::class.java)) }
+    }
+
+    private fun registerStartFreeformReceiver() {
+        if (receiverRegistered) return
+        val filter = IntentFilter("com.sunshine.freeform.start_freeform")
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            registerReceiver(startFreeformReceiver, filter, Context.RECEIVER_EXPORTED)
+        } else {
+            registerReceiver(startFreeformReceiver, filter)
+        }
+        receiverRegistered = true
+    }
+
+    private fun initRotationWatcher() {
+        runCatching {
+            iWindowManager = IWindowManager.Stub.asInterface(
+                ShizukuBinderWrapper(
+                    SystemServiceHelper.getSystemService("window"))
+            )
+            rotationWatcher = object : IRotationWatcher.Stub() {
+                override fun onRotationChanged(rotation: Int) {
+                    scope.launch(Dispatchers.Main) {
+                        displayRotation = rotation
+
+                        //q220902.3 如果程序崩溃的话，那么resources.configuration.orientation获取到的方向是错误的，所以不应该用该方法
+                        val tempScreenRotation = if (displayRotation == Surface.ROTATION_0 || displayRotation == Surface.ROTATION_180) {
+                            Configuration.ORIENTATION_PORTRAIT
+                        } else {
+                            Configuration.ORIENTATION_LANDSCAPE
+                        }
+
+                        if (tempScreenRotation != screenRotation) {
+                            screenRotation = tempScreenRotation
+
+                            if (screenRotation == Configuration.ORIENTATION_PORTRAIT) {
+                                screenHeight = max(resources.displayMetrics.widthPixels, resources.displayMetrics.heightPixels)
+                                screenWidth = min(resources.displayMetrics.widthPixels, resources.displayMetrics.heightPixels)
+                            } else {
+                                screenWidth = max(resources.displayMetrics.widthPixels, resources.displayMetrics.heightPixels)
+                                screenHeight = min(resources.displayMetrics.widthPixels, resources.displayMetrics.heightPixels)
+                            }
+
+                            removeFloating()
+                            initConfig()
+                            try {
+                                chooseAppFloatingView.onScreenRotationChanged(screenRotation)
+                            } catch (e: Exception) {}
+                        }
+                    }
+                }
+            }
+            iWindowManager.watchRotation(rotationWatcher, Display.DEFAULT_DISPLAY)
+        }.onFailure {
+            Log.w(TAG, "watchRotation skipped (Shizuku not ready)", it)
+        }
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent) {
@@ -181,14 +208,23 @@ class KeepAliveService : AccessibilityService(), SharedPreferences.OnSharedPrefe
 
     override fun onDestroy() {
         super.onDestroy()
-        displayManager.unregisterDisplayListener(displayListener)
-        if (isShowingFloating) removeFloating()
-        sp.unregisterOnSharedPreferenceChangeListener(this)
-
-        unregisterReceiver(startFreeformReceiver)
-
-        iWindowManager.removeRotationWatcher(rotationWatcher)
-        stopService(Intent(this, FreeformService::class.java))
+        runCatching {
+            if (::displayManager.isInitialized) {
+                displayManager.unregisterDisplayListener(displayListener)
+            }
+            if (isShowingFloating) removeFloating()
+            if (::sp.isInitialized) {
+                sp.unregisterOnSharedPreferenceChangeListener(this)
+            }
+            if (receiverRegistered) {
+                unregisterReceiver(startFreeformReceiver)
+                receiverRegistered = false
+            }
+            if (::iWindowManager.isInitialized && ::rotationWatcher.isInitialized) {
+                iWindowManager.removeRotationWatcher(rotationWatcher)
+            }
+            stopService(Intent(this, FreeformService::class.java))
+        }
     }
 
     /**
